@@ -1,13 +1,18 @@
 import requests
 from bs4 import BeautifulSoup
 import json
+import re
+
+
+def clean_string(input):
+    return re.sub("[^0-9a-zA-Z]", "", input).lower()
 
 URLS = [
     f"https://en.wikipedia.org/wiki/List_of_UK_top-ten_singles_in_{year}" for year in range(1970, 2021)]
 
 # URLS = ["https://en.wikipedia.org/wiki/List_of_UK_top-ten_singles_in_1978"]
 
-song_dict = dict()
+songs = []
 
 with requests.Session() as session:
     for url in URLS:
@@ -22,8 +27,7 @@ with requests.Session() as session:
                 data = row.find_all("td")
                 '''must reference from the final entry in the row as some rows share the same first column,
                 but this column is only present in the first of these rows'''
-                artist = data[-4].text
-                artist = artist.replace("\n", "")
+                artist = data[-4].text.replace("\n", "")
                 
                 single = data[-5].text
                 if "/" in single:
@@ -32,23 +36,27 @@ with requests.Session() as session:
                     singles = [single]
 
                 for s in singles:
+                    peak = data[-3].text.replace("\n", "")
+                    peak_date = data[-2].text.replace("\n", "")
                     s = s.split("\"")[1]
-                    
-                    # Some singles that repeat have different capitalisation, so the search must be case insensitive
-                    if s.lower() in (x.lower() for x in song_dict.keys()):
-                        if artist.lower() in (x.lower() for x in song_dict[s]):
-                            continue
-                        else:
-                            song_dict[s].append(artist)
-                    else:
-                        song_dict[s] = [artist]
+
+                    songs.append(
+                        {"artist": artist,
+                        "title": s,
+                        "peak": peak,
+                        "date": peak_date})
 
             except Exception as e:
                 continue
 
+# This looks like a terribly inefficient way to do this, but it is a one-time thing that runs in about 10 seconds, so I will stick with it
+dupes_removed = []
+for i in range(len(songs)):
+    if (songs[i]["artist"], songs[i]["title"]) not in [(songs[x]["artist"], songs[x]["title"]) for x in range(i+1, len(songs))]:
+        dupes_removed.append(songs[i])
 
 with open("all_top_10_singles_artist.json", "w", encoding="utf-8") as f:
     '''
     TODO: writing to the json without ensure_ascii=False makes the writer unable to write characters such as ö, even though they are ascii characters.
     '''
-    f.write(json.dumps(song_dict, ensure_ascii=False, indent=2))
+    f.write(json.dumps(dupes_removed, ensure_ascii=False, indent=2))
